@@ -39,6 +39,10 @@
     rowsRS.rewind ();
     ----
 
+    Compile your program using the mysqlclient library: 
+    ----
+    $ dmd -L-lmysqlclient <your_module.d> path/to/connection.d
+    ----
  +/
 
 

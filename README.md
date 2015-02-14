@@ -37,3 +37,9 @@ foreach (row; rowsRS) {
 /// Rewind the result set if you want to reuse it.
 rowsRS.rewind ();
 ```
+
+Compile your program using the mysqlclient library: 
+
+```bash
+    dmd -L-lmysqlclient <your_module.d> path/to/connection.d
+```
