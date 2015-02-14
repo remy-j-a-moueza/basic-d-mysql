@@ -1,14 +1,16 @@
 basic-d-mysql
 
 A dead simple and basic module to access MySQL databases using the C API. 
-Row values are return as strings.
+Row values are returned as strings.
 
 ```d
+import connection;
+
 /// Connect to a database. 
 auto con = new Connection ().connect ("localhost", 
-                                     "user-name",
-                                     "password",
-                                     "database");
+                                      "user-name",
+                                      "password",
+                                      "database");
 
 /// Execute statements, without retrieving the results.
 con.execute (`INSERT INTO STUFF( ID, VAL, THING)

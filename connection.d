@@ -2,9 +2,11 @@
 
 /+
    A dead simple and basic module to access MySQL databases using the C API. 
-   Row values are return as strings.
+   Row values are returned as strings.
 
    ----
+   import connection;
+
    /// Connect to a database. 
    auto con = new Connection ().connect ("localhost", 
                                          "user-name",
