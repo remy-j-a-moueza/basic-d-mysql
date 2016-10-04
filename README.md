@@ -1,6 +1,6 @@
-# basic-d-mysql
+# libDbNative
 
-A dead simple and basic module to access MySQL databases using the C API. 
+A dead simple and basic module to access MySQL and Sqliet databases using the C API. 
 Row values are returned as strings.
 
 ## Examples
@@ -14,6 +14,10 @@ auto con = new MySQL ("localhost",
                       "user-name",
                       "password",
                       "database");
+/* 
+// Alternative: 
+    auto con = new Sqlite ("/path/to/sqlite-database.db");
+*/
 
 /// Execute statements, without retrieving the results.
 con.execute (`INSERT INTO STUFF( ID, VAL, THING)
@@ -48,6 +52,10 @@ For **MySQL**, compile your program using the `mysqlclient` library:
 - add a `libs "mysqlclient"` to your `dub.sdl` file
 - or `"libs": ["mysqlclient"]` to your `dub.json` file.
 
+For **Sqlite**, compile your program using the `sqlite3` library: 
+- add a `libs "sqlite3"` to your `dub.sdl` file
+- or `"libs": ["sqlite3"]` to your `dub.json` file.
+
 ## Character encoding
 The  `MySQL` and `Sqlite` implementation of `Connection` are templated: 
 they take a string type as template parameter. 
@@ -63,6 +71,10 @@ auto con = new MySQL!Latin1String (
                         "user-name",
                         "password",
                         "database");
+/* 
+// Alternative: 
+    auto con = new Sqlite!Latin1String ("/path/to/sqlite-database.db");
+*/
 
 /// Now, use the con instance as usual.
 ```
