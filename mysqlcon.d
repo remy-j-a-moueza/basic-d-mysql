@@ -1,84 +1,12 @@
 // vim: inde= cin cino=(0,w4,W0,u2,)0 ft=d
-
-/+
-   A dead simple and basic module to access MySQL databases using the C API. 
-   Row values are returned as strings.
-
-   ----
-   import connection;
-
-   /// Connect to a database. 
-   auto con = new Connection ().connect ("localhost", 
-                                         "user-name",
-                                         "password",
-                                         "database");
-
-    /// Execute statements, without retrieving the results.
-    con.execute (`INSERT INTO STUFF( ID, VAL, THING)
-                         VALUES (1, 'val', 'thing')`);
-    
-    /// Retrieve the last inserted ID.
-    ulong lastID = con.lastInsertId ();
-
-    /// Retrieve results as an associative array.
-    string [string] rowsAA = con.query (`SELECT * FROM STUFF`);
-
-    foreach (row; rowsAA) {
-        writeln (row ["VAL"], ": ", row ["THING"]);
-    }
-    
-    /// Retrieve values as a result set. More efficient memory wise.
-    ResultSet rowsRS = con.query (`SELECT * FROM STUFF`);
-    
-    /// Iterates over the ResultSet as for an associative array.
-    foreach (row; rowsRS) {
-        writeln (row ["VAL"], ": ", row ["THING"]);
-    }
-
-    /// Rewind the result set if you want to reuse it.
-    rowsRS.rewind ();
-    ----
-
-    Compile your program using the mysqlclient library: 
-    ----
-    $ dmd -L-lmysqlclient <your_module.d> path/to/connection.d
-    ----
- +/
-
-
-/* LICENSE (MIT)
- *  
- * Copyright (c) 2015, Rémy J. A. Mouëza. 
- * All rights reserved.
- * 
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Rémy J. A. Mouëza (the author) nor the
- *       names of its contributors may be used to endorse or promote products
- *       derived from this software without specific prior written permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
- * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 import std.stdio;
 import std.string;
 import std.conv;
+import std.range;
+import std.encoding;
 
 import core.stdc.config;
+import dbconnection;
 
 /// dmd -L-lmysqlclient <your_module.d> connection.d
 
@@ -182,20 +110,9 @@ int checkError (int errorCode, MYSQL * con, string file, int line) {
     return errorCode;
 }
 
-/** Throw an exception if the errorCode is non zero. */
-int checkError (int errorCode, Connection con, string file, int line) {
-    return checkError (errorCode, con.con, file, line);
-}
-
 /** Throw an exception if the given pointer is null. */
 void * checkError (void * ptr, MYSQL * con, string file, int line) {
     checkError (ptr is null ? 1 : 0, con, file, line);
-    return ptr;
-}
-
-/** Throw an exception if the given pointer is null. */
-void * checkError (void * ptr, Connection con, string file, int line) {
-    checkError (ptr is null ? 1 : 0, con.con, file, line);
     return ptr;
 }
 
@@ -203,8 +120,7 @@ void * checkError (void * ptr, Connection con, string file, int line) {
 
 /** Minimalist MySQL connection client class.
  */
-class Connection {
-    static Connection [string] instances;
+class MySQL (String = string) : Connection  {
 
     protected {
         /// The MySQL connectio
@@ -222,29 +138,19 @@ class Connection {
         if (con == null) {
             throw new Exception (mysql_error (con).to!string);
         }
+    }
 
-        instances [name] = this;
+    this (string host, string user, string password, string db, uint port = 0,
+          string file = __FILE__, int line = __LINE__) 
+    {
+        this ();
+        connect (host, user, password, db, port, file, line);
     }
 
     ~this () {
-        if (name in instances) {
-            //writeln ("instances: ", instances);
-            //instances.remove (name);
-        }
         close ();
     }
 
-    /// Retrieve a connection by name. 
-    static Connection get (string name, string file = __FILE__, int line = __LINE__) {
-        Connection con = Connection.instances.get (name, null); 
-
-        if (con is null) {
-            throw new Exception ("%s (%d): Invalid connection [%s]: null"
-                                 .format (file, line, name));
-        }
-        return con;
-    }
-    
     /// Closes the connection.
     void close () {
         mysql_close (con);
@@ -252,6 +158,7 @@ class Connection {
 
     /// Connect to a database.
     Connection connect (string host, string user, string password, string db,
+                        uint port = 0,
                         string file = __FILE__, int line = __LINE__) {
         
         mysql_real_connect (con, 
@@ -259,15 +166,43 @@ class Connection {
                             user.toStringz,
                             password.toStringz,
                             db.toStringz,
-                            0,
+                            port,
                             null,
                             0).checkError (con, file, line);
+        _name = "%s@%s:%d/%s".format (user, host, port, db);
         return this;
     }
 
     /// Executes a query, discarding the results.
     void execute (string command, string file = __FILE__, int line = __LINE__) {
-        mysql_query (con, command.toStringz).checkError (con, file, line);
+        string cmd; 
+
+        static if (is (String == string)) {
+            cmd = command;
+        } else {
+            String tmp;
+            .transcode (command, tmp);
+            cmd = cast (string) tmp;
+        }
+
+        mysql_query (con, cmd.toStringz).checkError (con, file, line);
+    }
+
+    /** Transcode a string from the database to UTF-8, according to our template
+      parameter String.
+    */
+    string transcode (string src) {
+        static if (is (String == string)) {
+            /// if we are already using UTF-8, just return the string.
+            return src;
+
+        } else {
+            String from = cast (String) src;
+            string dest; 
+
+            .transcode (from, dest);
+            return dest;
+        }
     }
 
 
@@ -292,7 +227,12 @@ class Connection {
 
         foreach (i ; 0 .. numFields) {
             field = mysql_fetch_field (result);
-            fieldNames ~= field.name.to!string; 
+            
+            static if (is (String == string)) {
+                fieldNames ~= field.name.to!string;
+            } else {
+                fieldNames ~= transcode (field.name.to!string); 
+            }
         }
 
         // Deal with the rows. 
@@ -305,9 +245,16 @@ class Connection {
             string [string] drow; 
             
             foreach (i; 0 .. numFields) {
-                drow [fieldNames [i]] = row [i] 
-                                      ? row [i].to!string
-                                      : null ;
+                if (row [i]) {
+                    static if (is (String == string)) {
+                        drow [fieldNames [i]] = row [i].to!string;
+                    
+                    } else {
+                        drow [fieldNames [i]] = transcode (row [i].to!string);
+                    }
+                } else {
+                    row [i] = null;
+                }
             }
             results ~= drow;
             row = mysql_fetch_row (result);
@@ -321,8 +268,9 @@ class Connection {
     /** Executes a query and retrieve its results.
       
       The values are fetched as needed, which may improve the performances. 
-      The returned ResultSet can be re-used (iterated over again) using its
-      rewind() method that set its back to its first record.
+      The returned ResultSet instance can only be used once. Once the last
+      value has been fetched, we cannot rewind the ResultSet.
+
     */
     ResultSet select (string command, 
                         string file = __FILE__, int line = __LINE__) {
@@ -339,119 +287,18 @@ class Connection {
 
         foreach (i ; 0 .. numFields) {
             field = mysql_fetch_field (result);
-            fieldNames [i] = field.name.to!string; 
+
+            static if (is (String == string)) {
+                fieldNames [i] =            field.name.to!string ; 
+            } else {
+                fieldNames [i] = transcode (field.name.to!string); 
+            }
         }
 
-        return new ResultSet (result, fieldNames);
+        return new MySqlResultSet (result, fieldNames, &this.transcode);
     }
 }
 
-/** A row retrieved from the database */
-struct DbRow {
-    /// The values as an array of strings.
-    string [] values;
-
-    /// A pointer to the column names.
-    string []* keys;
-
-    /// Retrieve a value at a given key with optional default..
-    string get (string key, string default_) {
-        import std.algorithm;
-        auto index = countUntil (*keys, key);
-
-        if (index == -1) {
-            return default_;
-        }
-
-        return values [index];
-    }
-
-    /** Retrieve a value at a given key with default set to "".
-      ----
-      value = dbRowInstance [key];
-      ----
-    */
-    string opIndex (string key) {
-        return this.get (key, "");
-    }
-
-    /// Return a string representation.
-    string toString () {
-        string [] kvs;
-        
-        foreach (num, key; *keys) {
-            kvs ~= `"`~ key ~ `": "`~ values [num] ~`"`;
-        }
-        
-        return `[`~ kvs.join (", ") ~ `]`;
-    }
-
-    /** Convert that DbRow to an associative array. */
-    string [string] asAA () {
-        string [string] aa;
-        
-        foreach (num, key; *keys) {
-            aa [key] = values [num];
-        }
-        
-        return aa;
-    }
-    
-    /** Like an Associative Array "in" operator:  
-      ----
-      if ("key" in dbRowInstance) {...}
-      ----
-     Return a pointer to the column name if one is found matching the given key, 
-     otherwise return a null pointer. 
-     */
-    string * opBinaryRight (string op:"in", T : string) (T key) {
-        auto index = countUntil (*keys, key);
-
-        if (index == -1) {
-            return null;
-        }
-
-        return & (*keys) [index];
-    }
-
-    /** Iterating over this.values. 
-     ----
-     foreach (value; dbRowInstance) {
-        ...
-     }
-     ----
-     */
-    int opApply (int delegate (ref string val) dg) {
-        int result = 0; 
-
-        foreach (num, key; *keys) {
-            result = dg (values [num]);
-
-            if (result) 
-                break;
-        }
-        return result;
-    }
-    
-    /** Iterating over the keys and values. 
-     ----
-     foreach (key, value; dbRowInstance) {
-        ...
-     }
-     ---
-     */
-    int opApply (int delegate (ref string key, ref string val) dg) {
-        int result = 0; 
-
-        foreach (num, key; *keys) {
-            result = dg (key, values [num]);
-
-            if (result) 
-                break;
-        }
-        return result;
-    }
-}
 
 /** An OutputRange containing lines from a database query. 
     It can be used in a foreach loop: 
@@ -461,13 +308,13 @@ struct DbRow {
     }
     ----
  */
-class ResultSet {
+class MySqlResultSet : ResultSet {
     protected {
         /// The native mysql result pointer.
         MYSQL_RES * result;
 
         /// The current record.
-        DbRow _front;
+        LightDbRow _front;
 
         /// True when there is no more record to fetch.
         bool isEmpty;
@@ -476,10 +323,21 @@ class ResultSet {
     /// The names of the columns.
     string [] keys;
 
+    /** A delegate to transcode strings from the database.
+      This is set by the Connection that instantiate us.
+      */
+    string delegate (string) transcode;
+
     /// Initializes from a low level mysql query.
-    this (MYSQL_RES * res, string [] ks) {
-        result = res;
-        keys   = ks;
+    this (MYSQL_RES * res, string [] ks, typeof (transcode) dg) {
+        result    = res;
+        keys      = ks;
+        transcode = dg;
+
+        /// transcode needs to be initialized first before calling popFront!!!
+        if (transcode is null) {
+            transcode = (s) => s;
+        }
         popFront ();
     }
 
@@ -496,11 +354,16 @@ class ResultSet {
 
         foreach (num, k; keys) {
             vals [num] = row [num] 
-                       ? row [num].to!string
+                       ? transcode (row [num].to!string)
                        : null;
         }
 
-        _front = DbRow (vals, &keys);
+        if (_front is null) {
+            _front = new LightDbRow (vals, &keys);
+        
+        } else {
+            _front.values = vals;
+        }
     }
 
     /// Retrieve the current record.
@@ -519,10 +382,11 @@ class ResultSet {
     }
 
     /// Rewind the result set so that it can be iterated once more. 
-    void rewind () {
+    bool rewind () {
         mysql_data_seek (result, 0);
         isEmpty = false;
         popFront ();
+        return true;
     }
 
     /// Releases the resources on deletion.
