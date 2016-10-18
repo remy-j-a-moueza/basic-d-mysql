@@ -8,6 +8,7 @@ import std.encoding;
 import dbconnection;
 
 
+/// This should not be necessary: use the etc.c.sqlite3 module; 
 extern (C) {
     struct sqlite3;
     struct sqlite3_stmt;
@@ -76,11 +77,18 @@ extern (C) {
     }
 }
 
-
+/** A connection to an Sqlite3 database.
+ 
+ The template parameter value is the type of the database encoding. 
+ All queries return strings in UTF-8 encoding. 
+*/
 class Sqlite (String = string) : Connection {
 
     protected {
+        /// The connection to the database
         sqlite3 * con;
+
+        /// The file name of the database we connected to.
         string _name;
     }
 
@@ -102,6 +110,7 @@ class Sqlite (String = string) : Connection {
         _name = filename;
     }
 
+    /// Return the filename we used for our initialization.
     string name () { return _name; }
 
     ~this () {
@@ -150,6 +159,7 @@ class Sqlite (String = string) : Connection {
         }
     }
 
+    /** A utility function to encode strings to the database encoding. */
     string toDbString (string src) {
         string res; 
 
@@ -233,13 +243,16 @@ class Sqlite (String = string) : Connection {
     ResultSet select (string command, 
                              string file = __FILE__, int line = __LINE__)
     {
-        //~ DbRow [] ls 
-        //~     = cast (DbRow []) 
-        //~       this.query (command, file, line)
-        //~           .map!(aa => new BasicDbRow (aa))
-        //~           .array;
-        //~ 
-        //~ return new BasicResultSet (inputRangeObject (ls));
+        /// A minimal implementation example: 
+        version (None) {
+            DbRow [] ls 
+                = cast (DbRow []) 
+                  this.query (command, file, line)
+                      .map!(aa => new BasicDbRow (aa))
+                      .array;
+            
+            return new BasicResultSet (inputRangeObject (ls));
+        }
         
         SqliteResultSet res = new SqliteResultSet (&this.transcode); 
 
@@ -301,9 +314,20 @@ class Sqlite (String = string) : Connection {
     }
 }
 
+/** An OutputRange containing lines from a database query. 
+    It can be used in a foreach loop: 
+    ----
+    foreach (dbRow; resultSetInstance) {
+        ...
+    }
+    ----
+ */
 class SqliteResultSet : ResultSet {
     protected {
+        /// The rows in that set.
         DbRow [] rows;
+        
+        /// Index in the array of rows we are iterating over.
         size_t cursor = 0; 
 
     }
@@ -316,6 +340,8 @@ class SqliteResultSet : ResultSet {
       */
     string delegate (string) transcode; 
 
+
+    /** Initializes with a value for our transcode delegate member. */
     this (typeof (transcode) dg) {
         transcode = dg;
 
@@ -324,6 +350,7 @@ class SqliteResultSet : ResultSet {
         }
     }
 
+    /// Iterate to the next item.
     void popFront () {
         cursor ++;
     }

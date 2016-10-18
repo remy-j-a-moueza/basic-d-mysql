@@ -119,6 +119,9 @@ void * checkError (void * ptr, MYSQL * con, string file, int line) {
 
 
 /** Minimalist MySQL connection client class.
+
+ The template parameter value is the type of the database encoding. 
+ All queries return strings in UTF-8 encoding. 
  */
 class MySQL (String = string) : Connection  {
 
@@ -328,7 +331,9 @@ class MySqlResultSet : ResultSet {
       */
     string delegate (string) transcode;
 
-    /// Initializes from a low level mysql query.
+    /** Initializes from a low level mysql query.
+      Uses a delegate to initialize our transcode delegate member.
+      */
     this (MYSQL_RES * res, string [] ks, typeof (transcode) dg) {
         result    = res;
         keys      = ks;
